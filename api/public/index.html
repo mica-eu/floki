@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title></title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style media="screen">
+      video {
+        height: 80px;
+        border: 1px solid red;
+      }
+    </style>
+  </head>
+  <body>
+    <video id="self-view" autoplay></video>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <script type="text/javascript">
+      const socket = io();
+      const selfView = document.querySelector('#self-view');
+      const room = location.hash.substring(1) || Date.now();
+
+      location.hash = room;
+
+      let localStream = null;
+      let connections = {}; // Lista de conexões abertas
+      let sockets = []; // Lista de clients na sala
+
+      navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+        .then(stream => selfView.srcObject = localStream = stream)
+        .catch(e => console.log(e));
+
+      function call(to) {
+        if (connections[to]) {
+          return console.log(`pc ${to} already done`);
+        }
+
+        connections[to] = new RTCPeerConnection({
+          'iceServers': [
+            { 'urls': 'stun:stun.services.mozilla.com' },
+            { 'urls': 'stun:stun.l.google.com:19302' },
+          ],
+        });
+
+        const pc = connections[to];
+
+        pc.onicecandidate = (evt) => {
+          if (!evt || !evt.candidate) return;
+          const payload = JSON.stringify({ to, from: socket.id, candidate: evt.candidate });
+          socket.emit('candidate', payload);
+          console.log(`send candidate to ${to}`);
+        };
+
+        pc.onnegotiationneeded = () => {
+          pc.createOffer()
+            .then(offer => pc.setLocalDescription(offer))
+            .then(() => {
+              const payload = JSON.stringify({
+                to,
+                from: socket.id,
+                desc: pc.localDescription,
+              });
+              socket.emit('offer', payload);
+              console.log(`send offer to ${to}`);
+            })
+            .catch(e => console.log(e));
+        };
+
+        pc.ontrack = (evt) => {
+          console.log(evt.streams);
+          const video = document.createElement('video');
+          video.autoplay = true;
+          video.srcObject = evt.streams[0];
+          video.id = to;
+          document.body.append(video);
+          video.play();
+        };
+
+        // pc.addTrack(localStream.getAudioTracks()[0], localStream);
+        pc.addTrack(localStream.getVideoTracks()[0], localStream);
+      }
+
+      socket.on('connect', () => socket.emit('join', { room }));
+
+      socket.on('joined', details => {
+        const { id } = JSON.parse(details);
+        console.log(`id ${id} joined`);
+        call(id);
+      });
+
+      socket.on('leave', details => {
+        const { id } = JSON.parse(details);
+        const preview = document.getElementById(id);
+        if (connections[id]) connections[id].close();
+        if (preview) document.body.removeChild(preview);
+        console.log(`id ${id} leave`);
+      });
+
+      socket.on('candidate', details => {
+        const { to, from, candidate } = JSON.parse(details);
+        console.log(`receiving candidate from ${from}`);
+        if (to === socket.id) {
+          call(from);
+          connections[from].addIceCandidate(candidate).catch(e => console.log(e));
+        }
+      });
+
+      socket.on('offer', details => {
+        const { to, from, desc } = JSON.parse(details);
+        console.log(`receiving offer from ${from}`);
+        if (to === socket.id) {
+          call(from);
+          const pc = connections[from];
+          pc.setRemoteDescription(desc)
+            .then(() => pc.createAnswer())
+            .then(answer => pc.setLocalDescription(answer))
+            .then(() => {
+              const payload = JSON.stringify({
+                to: from,
+                from: socket.id,
+                desc: pc.localDescription,
+              });
+              socket.emit('answer', payload);
+              console.log(`send answer to ${from}`);
+            })
+            .catch(e => console.log(e));
+        }
+      });
+
+      socket.on('answer', details => {
+        const { to, from, desc } = JSON.parse(details);
+        console.log(`receiving answer from ${from}`);
+        if (to === socket.id) {
+          call(from);
+          connections[from].setRemoteDescription(desc).catch(e => console.log(e));
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "api",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon -L index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "micaelsouza <micael.souza@outlook.com>",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "express": "^4.16.2",
+    "polka": "^0.3.4",
+    "serve-static": "^1.13.2",
+    "socket.io": "^2.0.4"
+  },
+  "devDependencies": {
+    "nodemon": "^1.15.0"
+  }
+}
